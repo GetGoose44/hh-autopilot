@@ -1,0 +1,9 @@
+[Unit]
+Description=Abroad vacancies digest (weekdays 11:00 MSK)
+
+[Timer]
+OnCalendar=Mon..Fri *-*-* 11:00:00 Europe/Moscow
+Persistent=true
+
+[Install]
+WantedBy=timers.target

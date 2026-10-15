@@ -1,0 +1,11 @@
+[Unit]
+Description=Abroad vacancies (Serbia, Thailand): digest and applications
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=hh
+WorkingDirectory=/home/hh/hh-autoapply
+ExecStart=/home/hh/hh-autoapply/abroad.sh
+TimeoutStartSec=2h

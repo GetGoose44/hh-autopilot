@@ -1,8 +1,8 @@
 diff --git a/src/hh_applicant_tool/operations/apply_vacancies.py b/src/hh_applicant_tool/operations/apply_vacancies.py
-index e184fd2..7adbb81 100755
+index e184fd2..6770a45 100755
 --- a/src/hh_applicant_tool/operations/apply_vacancies.py
 +++ b/src/hh_applicant_tool/operations/apply_vacancies.py
-@@ -40,6 +40,68 @@ if TYPE_CHECKING:
+@@ -40,6 +40,64 @@ if TYPE_CHECKING:
  
  logger = logging.getLogger(__package__)
  
@@ -38,13 +38,9 @@ index e184fd2..7adbb81 100755
 +ни к одному типу (ремонт техники, производственный контроль качества, \
 +продажи, маркетинг, эксперт-консультант под видом «AI-тренера»), или если \
 +главное требование — коммерческая разработка на Python/другом языке, \
-+обучение ML-моделей, Data Science, DevOps/MLOps, руководство AI-направлением.
-+Также SKIP, если это лидская или руководящая роль в автоматизации \
-+тестирования: лид/техлид/руководитель команды автотестирования, архитектор \
-+фреймворка автотестов, когда кандидат должен задавать техническое \
-+направление автоматизации и вести других AQA. Руководство QA в целом \
-+(QA Lead, Head of QA, начальник отдела тестирования, выстраивание \
-+QA-процессов) и senior-позиции — подходят.
++обучение ML-моделей, Data Science, DevOps/MLOps.
++Уровень не важен: senior, lead, руководство QA и автоматизацией — подходят, \
++откликаемся на любой уровень, кроме junior и стажировок.
 +
 +Для AI-вакансий опирайся на голосовой ИИ в Яндексе (ASR/TTS, метрики, \
 +A/B-тесты, разметка, ассессоры), QA/AI-процессы в текущей роли и ежедневную \
@@ -71,7 +67,7 @@ index e184fd2..7adbb81 100755
  
  class Namespace(BaseNamespace):
      resume_id: str | None
-@@ -58,7 +120,7 @@ class Namespace(BaseNamespace):
+@@ -58,7 +116,7 @@ class Namespace(BaseNamespace):
      work_format: list[str] | None
      dry_run: bool
      # Пошли доп фильтры, которых не было
@@ -80,7 +76,7 @@ index e184fd2..7adbb81 100755
      employment: list[str] | None
      area: list[str] | None
      metro: list[str] | None
-@@ -84,6 +146,7 @@ class Namespace(BaseNamespace):
+@@ -84,6 +142,7 @@ class Namespace(BaseNamespace):
      per_page: int
      total_pages: int
      excluded_filter: str | None
@@ -88,10 +84,15 @@ index e184fd2..7adbb81 100755
      max_responses: int
      send_email: bool
      skip_tests: bool
-@@ -108,6 +171,11 @@ class Operation(BaseOperation):
+@@ -108,6 +167,16 @@ class Operation(BaseOperation):
              help="Путь до файла с текстом сопроводительного письма.",
              type=Path,
          )
++        parser.add_argument(
++            "--letter-rules",
++            help="Файл с правилами письма вместо встроенных (какие вакансии подходят, когда SKIP, формат)",
++            type=Path,
++        )
 +        parser.add_argument(
 +            "--candidate-profile",
 +            help="Файл с профилем кандидата. Вместе с --ai письмо генерируется по полному описанию вакансии и этому профилю",  # noqa: E501
@@ -100,7 +101,7 @@ index e184fd2..7adbb81 100755
          parser.add_argument(
              "-f",
              "--force-message",
-@@ -178,6 +246,11 @@ class Operation(BaseOperation):
+@@ -178,6 +247,11 @@ class Operation(BaseOperation):
              type=str,
              help=r"Исключить вакансии, если название или описание не соответствует шаблону. Например, `--excluded-filter 'junior|стажир|bitrix|дружн\w+ коллектив|полиграф|open\s*space|опенспейс|хакатон|конкурс|тестов\w+ задан'`",
          )
@@ -112,7 +113,7 @@ index e184fd2..7adbb81 100755
          parser.add_argument(
              "--max-responses",
              type=int,
-@@ -210,8 +283,8 @@ class Operation(BaseOperation):
+@@ -210,8 +284,8 @@ class Operation(BaseOperation):
          )
          api_search_filters.add_argument(
              "--experience",
@@ -122,7 +123,7 @@ index e184fd2..7adbb81 100755
              default=None,
          )
          api_search_filters.add_argument(
-@@ -339,6 +412,7 @@ class Operation(BaseOperation):
+@@ -339,6 +413,7 @@ class Operation(BaseOperation):
          self.employment = args.employment
          self.excluded_employer_id = args.excluded_employer_id
          self.excluded_filter = args.excluded_filter
@@ -130,7 +131,7 @@ index e184fd2..7adbb81 100755
          self.experience = args.experience
          self.force_message = args.force_message
          self.industry = args.industry
-@@ -365,11 +439,29 @@ class Operation(BaseOperation):
+@@ -365,11 +440,33 @@ class Operation(BaseOperation):
          self.sort_point_lng = args.sort_point_lng
          self.top_lat = args.top_lat
          self.total_pages = args.total_pages
@@ -144,7 +145,11 @@ index e184fd2..7adbb81 100755
          self.cover_letter_ai = (
 -            tool.get_cover_letter_ai(args.system_prompt)
 +            tool.get_cover_letter_ai(
-+                self.candidate_profile + "\n\n" + CANDIDATE_LETTER_RULES
++                self.candidate_profile + "\n\n" + (
++                    args.letter_rules.read_text(encoding="utf-8")
++                    if args.letter_rules
++                    else CANDIDATE_LETTER_RULES
++                )
 +                if self.candidate_profile
 +                else args.system_prompt
 +            )
@@ -161,7 +166,7 @@ index e184fd2..7adbb81 100755
          self.ai_filter = args.ai_filter
          self.ai_filter_prompt = args.ai_filter_prompt
          self.vacancy_filter_ai = None
-@@ -491,6 +583,33 @@ class Operation(BaseOperation):
+@@ -491,6 +588,33 @@ class Operation(BaseOperation):
  
          return "\n".join(parts)
  
@@ -195,7 +200,7 @@ index e184fd2..7adbb81 100755
      def _ask_ai_suitability(
          self, prompt: str, vacancy_name: str, log_suffix: str = ""
      ) -> bool:
-@@ -905,6 +1024,15 @@ class Operation(BaseOperation):
+@@ -905,6 +1029,15 @@ class Operation(BaseOperation):
                      )
                      continue
  
@@ -211,7 +216,7 @@ index e184fd2..7adbb81 100755
                  if self._is_excluded(vacancy):
                      logger.info(
                          "Вакансия попала под фильтр: %s",
-@@ -1018,7 +1146,15 @@ class Operation(BaseOperation):
+@@ -1018,7 +1151,15 @@ class Operation(BaseOperation):
                  if self.force_message or vacancy.get(
                      "response_letter_required"
                  ):
@@ -228,7 +233,7 @@ index e184fd2..7adbb81 100755
                          msg = self.message_prompt + "\n"
                          ## добавляем переменные в контекст AI запроса ##
                          msg += (
-@@ -1297,7 +1433,7 @@ class Operation(BaseOperation):
+@@ -1297,7 +1438,7 @@ class Operation(BaseOperation):
              question = (task.get("description") or "").strip()
  
              if solutions:
@@ -237,7 +242,7 @@ index e184fd2..7adbb81 100755
                      options = "\n".join(
                          [
                              f"{s['id']}: {strip_tags(s['text'])}"
-@@ -1307,14 +1443,19 @@ class Operation(BaseOperation):
+@@ -1307,14 +1448,19 @@ class Operation(BaseOperation):
                      prompt = (
                          f"Вопрос: {question}\n"
                          f"Варианты:\n{options}\n"
@@ -263,7 +268,7 @@ index e184fd2..7adbb81 100755
                      payload[field_name] = selected_id
                  else:
                      yes_solution = next(
-@@ -1336,7 +1477,12 @@ class Operation(BaseOperation):
+@@ -1336,7 +1482,12 @@ class Operation(BaseOperation):
                  #     for _ in range(random.randint(3, 15))
                  # )
  
@@ -277,7 +282,7 @@ index e184fd2..7adbb81 100755
                      answer = rand_text(
                          "{{Простите|Извините}, но я не перехожу по {внешним|сторонним} ссылкам, так как {опасаюсь взлома|не хочу {быть взломанным|подхватить вирус|чтобы у меня {со|с банковского} счета украли деньги}}.|У меня нет времени на заполнение анкет и гуглодоков}"
                      )
-@@ -1468,7 +1614,7 @@ class Operation(BaseOperation):
+@@ -1468,7 +1619,7 @@ class Operation(BaseOperation):
          if self.work_format:
              params["work_format"] = list(self.work_format)
          if self.experience:

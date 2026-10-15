@@ -31,7 +31,7 @@ BASE = [
     "experience=between1And3", "experience=between3And6", "experience=moreThan6",
     "salary=150000", "currency=RUR",
 ]
-QA_EXCLUDED = r"\bjunior\b(?!\s*\+)|стаж[её]р|\bintern\b|младш|^(?!.*middle)(?=.*(\bsenior\b|\bsr\b|ведущ|старш))|\blead\b|\bлид\b|тимлид|техлид|лидер|руководител|\bhead\b|начальник|директор|архитектор|principal|\bstaff\b"
+QA_EXCLUDED = r"\bjunior\b(?!\s*\+)|стаж[её]р|\bintern\b|младш"
 DIRECTIONS = [
     (['text=QA OR тестировщик OR тестирование OR SDET OR AQA OR tester OR "quality assurance"', "search_field=name"],
      re.compile(QA_EXCLUDED, re.I)),
@@ -40,7 +40,7 @@ DIRECTIONS = [
       'OR "AI агент" OR "AI agent" OR "ИИ-агент" OR "внедрению ИИ" OR "внедрению AI" '
       'OR "AI-аналитик" OR "AI аналитик" OR "AI analyst" OR "AI-специалист" OR "AI specialist"',
       "search_field=name"],
-     re.compile(QA_EXCLUDED + r"|продаж|маркетинг|маркетолог|data scientist|\bML\b|devops|mlops|\bлид\b|лидер|техлид|тимлид|\blead\b|руководител|начальник|\bhead\b|директор|архитектор", re.I)),
+     re.compile(QA_EXCLUDED + r"|продаж|маркетинг|маркетолог|data scientist|\bML\b|devops|mlops", re.I)),
 ]
 REGIONS = [
     ["work_format=REMOTE"],

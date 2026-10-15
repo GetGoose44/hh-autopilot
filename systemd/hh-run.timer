@@ -1,9 +1,8 @@
 [Unit]
-Description=HH autoapply schedule (weekdays hourly 9-21, weekends 12 and 18 MSK)
+Description=HH autoapply schedule (weekdays hourly 9-18 MSK)
 
 [Timer]
-OnCalendar=Mon..Fri *-*-* 09..21:00:00 Europe/Moscow
-OnCalendar=Sat,Sun *-*-* 12,18:00:00 Europe/Moscow
+OnCalendar=Mon..Fri *-*-* 09..18:00:00 Europe/Moscow
 
 [Install]
 WantedBy=timers.target

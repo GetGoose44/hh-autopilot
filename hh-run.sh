@@ -145,9 +145,13 @@ echo "Вакансии, опубликованные после $DATE_FROM"
 # Ищем по названию без фильтра роли: часть QA-вакансий заведена как «Программист, разработчик»;
 # не-IT «контроль качества» отсекает ИИ (SKIP)
 QA_SEARCH=(--search 'QA OR тестировщик OR тестирование OR SDET OR AQA OR tester OR "quality assurance"' --search-field name)
-QA_EXCLUDED='\bjunior\b(?!\s*\+)|стаж[её]р|\bintern\b|младш|^(?!.*middle)(?=.*(\bsenior\b|\bsr\b|ведущ|старш))|\blead\b|\bлид\b|тимлид|техлид|лидер|руководител|\bhead\b|начальник|директор|архитектор|principal|\bstaff\b'
+# Любой уровень, кроме junior и стажёров: на Senior и Lead тоже откликаемся
+QA_EXCLUDED='\bjunior\b(?!\s*\+)|стаж[её]р|\bintern\b|младш'
 AI_SEARCH=(--search 'LLM OR "AI-инженер" OR "AI инженер" OR "AI engineer" OR "ИИ-инженер" OR "инженер ИИ" OR "prompt engineer" OR "промпт-инженер" OR "промпт инженер" OR "AI QA" OR "AI-агент" OR "AI агент" OR "AI agent" OR "ИИ-агент" OR "внедрению ИИ" OR "внедрению AI" OR "AI-аналитик" OR "AI аналитик" OR "AI analyst" OR "AI-специалист" OR "AI specialist"' --search-field name)
-AI_EXCLUDED="$QA_EXCLUDED"'|продаж|маркетинг|маркетолог|data scientist|\bML\b|devops|mlops|\bлид\b|лидер|техлид|тимлид|\blead\b|руководител|начальник|\bhead\b|директор|архитектор'
+AI_EXCLUDED="$QA_EXCLUDED"'|продаж|маркетинг|маркетолог|data scientist|\bML\b|devops|mlops'
+
+# Таиланд: широкий поиск по названию, отбор делает Claude
+TH_SEARCH=(--search 'менеджер OR manager OR специалист OR specialist OR ассистент OR assistant OR агент OR agent OR стажер OR стажёр OR intern OR поддержк OR support OR оператор OR координатор OR coordinator OR QA OR тестировщик OR product OR продукт OR AI OR аналитик OR analyst OR администратор OR консультант' --search-field name)
 
 # Чёрный список работодателей (скам и т.п.): «id  # название» по строке; его же читает inbox.py
 EXCLUDED_EMPLOYERS=$(sed 's/#.*//' "$DIR/excluded_employers.txt" 2>/dev/null | tr -s ' \n' ' ' | xargs)
@@ -159,17 +163,20 @@ EXCLUDED_EMPLOYERS=$(sed 's/#.*//' "$DIR/excluded_employers.txt" 2>/dev/null | t
 # --search включает полный поиск (без него HH отдаёт только «похожие на резюме»).
 # Первый аргумент — направление (QA или AI), остальные — регион/формат
 apply_pass() {
-  local -a search; local excluded
+  local -a search filters; local excluded
+  filters=(--experience between1And3 between3And6 moreThan6 --salary 150000 --currency RUR)
   if [[ $1 == AI ]]; then search=("${AI_SEARCH[@]}"); excluded=$AI_EXCLUDED
+  elif [[ $1 == TH ]]; then
+    # Таиланд: любые роли и любой опыт, стажёрские тоже; что подходит — решает Claude по letter_rules_th.txt
+    search=("${TH_SEARCH[@]}"); excluded='^$'; filters=(--letter-rules "$DIR/letter_rules_th.txt")
   else search=("${QA_SEARCH[@]}"); excluded=$QA_EXCLUDED; fi
   shift
   "$TOOL" -v apply \
     "${search[@]}" \
-    --experience between1And3 between3And6 moreThan6 \
+    "${filters[@]}" \
     --excluded-title "$excluded" \
     ${=EXCLUDED_EMPLOYERS:+--excluded-employer-id $EXCLUDED_EMPLOYERS} \
     --date-from "$DATE_FROM" \
-    --salary 150000 --currency RUR \
     --order-by publication_time \
     --use-ai -f \
     --candidate-profile "${PROFILE:-$DIR/profile.txt}" \
@@ -190,23 +197,23 @@ apply_with_retries() {
   return $rc
 }
 
-# A/B-тест: по нечётным дням года удалёнка идёт со второго резюме и его профилем,
-# по чётным — с основного; сравнение — stats.py --week, срез «A/B удалёнки»
-if (( $(date +%j) % 2 )); then
-  REMOTE_RESUME=$RESUME_OFFICE REMOTE_PROFILE=$DIR/profile_office.txt
-else
-  REMOTE_RESUME=$RESUME_MAIN REMOTE_PROFILE=$DIR/profile.txt
-fi
-echo "Удалёнка сегодня с резюме $REMOTE_RESUME"
-
+# Российская удалёнка — всегда со второго резюме (город Москва, зарплата в рублях),
+# остальная удалёнка — с основного. Проход по России идёт первым: на уже отправленные
+# отклики инструмент второй раз не откликается. Сравнение резюме — stats.py --week
+echo "--- Удалёнка в России (второе резюме)"
+PROFILE=$DIR/profile_office.txt apply_with_retries QA --resume-id $RESUME_OFFICE --area 113 --work-format REMOTE "$@"
+RU_REMOTE_RC=$?
 echo "--- Удалёнка, любой регион"
-PROFILE=$REMOTE_PROFILE apply_with_retries QA --resume-id $REMOTE_RESUME --work-format REMOTE "$@"
+apply_with_retries QA --resume-id $RESUME_MAIN --work-format REMOTE "$@"
 REMOTE_RC=$?
 echo "--- Страна проживания, любой формат"
 apply_with_retries QA --resume-id $RESUME_MAIN --area $HOME_AREA "$@"
 CITY_RC=$?
+echo "--- AI-направление: удалёнка в России (второе резюме)"
+PROFILE=$DIR/profile_office.txt apply_with_retries AI --resume-id $RESUME_OFFICE --area 113 --work-format REMOTE "$@"
+AI_RU_REMOTE_RC=$?
 echo "--- AI-направление: удалёнка, любой регион"
-PROFILE=$REMOTE_PROFILE apply_with_retries AI --resume-id $REMOTE_RESUME --work-format REMOTE "$@"
+apply_with_retries AI --resume-id $RESUME_MAIN --work-format REMOTE "$@"
 AI_REMOTE_RC=$?
 echo "--- AI-направление: страна проживания, любой формат"
 apply_with_retries AI --resume-id $RESUME_MAIN --area $HOME_AREA "$@"
@@ -218,9 +225,22 @@ echo "--- AI-направление: офис/гибрид в выбранных
 PROFILE=$DIR/profile_office.txt apply_with_retries AI --resume-id $RESUME_OFFICE --area ${=OFFICE_AREAS} --work-format ON_SITE HYBRID "$@"
 AI_RU_OFFICE_RC=$?
 
+TH_RC=0
+if [[ -n "$RESUME_TH" ]]; then
+  # Первый проход по Таиланду берёт вакансии за 30 дней, дальше — как остальные
+  TH_FROM=$DATE_FROM
+  if [[ ! -f "$DIR/.th_backfilled" ]]; then
+    TH_FROM=$(date -d "@$(( RUN_STARTED - 30 * 86400 ))" +%Y-%m-%dT%H:%M:%S%z 2>/dev/null || date -r $(( RUN_STARTED - 30 * 86400 )) +%Y-%m-%dT%H:%M:%S%z)
+  fi
+  echo "--- Таиланд, любые подходящие роли (третье резюме)"
+  PROFILE=$DIR/profile_th.txt apply_with_retries TH --resume-id $RESUME_TH --area 300 "$@" --date-from "$TH_FROM"
+  TH_RC=$?
+  (( TH_RC == 0 )) && [[ "$*" != *--dry-run* ]] && touch "$DIR/.th_backfilled"
+fi
+
 # Время запоминаем только после успешных проходов и не в пробном режиме,
 # иначе следующий прогон пропустил бы вакансии
-if (( REMOTE_RC == 0 && CITY_RC == 0 && AI_REMOTE_RC == 0 && AI_CITY_RC == 0 && RU_OFFICE_RC == 0 && AI_RU_OFFICE_RC == 0 )) && [[ "$*" != *--dry-run* ]]; then
+if (( TH_RC == 0 && RU_REMOTE_RC == 0 && AI_RU_REMOTE_RC == 0 && REMOTE_RC == 0 && CITY_RC == 0 && AI_REMOTE_RC == 0 && AI_CITY_RC == 0 && RU_OFFICE_RC == 0 && AI_RU_OFFICE_RC == 0 )) && [[ "$*" != *--dry-run* ]]; then
   echo "$RUN_STARTED" > "$LAST_FILE"
 fi
 
