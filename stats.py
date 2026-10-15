@@ -48,15 +48,19 @@ def level(name: str) -> str:
     return "без уровня"
 
 
-def is_remote(vacancy_id: str, cache: dict) -> bool | None:
-    if vacancy_id not in cache:
-        try:
-            v = api(f"/vacancies/{vacancy_id}")
-            formats = {f["id"] for f in v.get("work_format") or []}
-            cache[vacancy_id] = "REMOTE" in formats or (v.get("schedule") or {}).get("id") == "remote"
-        except Exception:
-            cache[vacancy_id] = None
-    return cache[vacancy_id]
+def remote_ids() -> set[str]:
+    """Вакансии, на которые откликнулись в проходах «удалёнка», — по логам прогонов.
+
+    Карточки вакансий по одной не запрашиваем: сотни запросов подряд HH встречает капчей.
+    """
+    ids, remote = set(), False
+    for log in sorted((DIR / "logs").glob("20*.log")):
+        for ln in log.read_text(errors="replace").splitlines():
+            if ln.startswith("--- "):
+                remote = "удалёнка" in ln.lower()
+            elif remote and (m := re.search(r"Отправили отклик на вакансию(?: с тестом)? \S*/vacancy/(\d+)", ln)):
+                ids.add(m.group(1))
+    return ids
 
 
 def line(items: list[dict]) -> str:
@@ -66,15 +70,14 @@ def line(items: list[dict]) -> str:
     return f"{n} откл → {positive} пригл ({100 * positive / max(n, 1):.1f}%), отказов {states['discard']}"
 
 
-def segments(items: list[dict], resumes: dict[str, str], remote_cache: dict) -> list[str]:
+def segments(items: list[dict], resumes: dict[str, str], remote: set[str]) -> list[str]:
     out = []
     groups = {
         "Резюме": lambda n: resumes.get((n.get("resume") or {}).get("id"), "другое"),
-        "Формат": lambda n: {True: "удалёнка", False: "офис/гибрид", None: "закрыта"}[
-            is_remote(n["vacancy"]["id"], remote_cache)],
+        "Проход": lambda n: "удалёнка" if n["vacancy"]["id"] in remote else "офис, гибрид, Сербия, до логов",
         "A/B удалёнки": lambda n: (
             resumes.get((n.get("resume") or {}).get("id"), "другое")
-            if is_remote(n["vacancy"]["id"], remote_cache) else None),
+            if n["vacancy"]["id"] in remote else None),
         "Уровень": lambda n: level(n["vacancy"]["name"]),
         "Направление": lambda n: "AI" if AI_TITLE.search(n["vacancy"]["name"]) else "QA",
     }
@@ -94,13 +97,13 @@ def week_report() -> str:
     items = negotiations()
     resumes = {r["id"]: r["title"][:30] for r in api("/resumes/mine")["items"]}
     now = datetime.now(timezone.utc)
-    cache: dict = {}
+    remote = remote_ids()
     parts = ["📊 <b>Воронка откликов за неделю</b>"]
     for days in (7, 28):
         since = (now - timedelta(days=days)).strftime("%Y-%m-%d")
         window = [n for n in items if n["created_at"][:10] >= since]
         parts.append(f"\n<b>— {days} дней:</b> {line(window)}")
-        parts += segments(window, resumes, cache)
+        parts += segments(window, resumes, remote)
     parts.append("\nСвежие отклики ещё ждут ответа — проценты за 7 дней занижены.")
     return "\n".join(parts)
 
