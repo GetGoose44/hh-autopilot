@@ -8,4 +8,5 @@ Type=oneshot
 User=hh
 WorkingDirectory=/home/hh/hh-autoapply
 ExecStart=/home/hh/hh-autoapply/.venv/bin/python /home/hh/hh-autoapply/stats.py --week
+ExecStart=/home/hh/hh-autoapply/.venv/bin/python /home/hh/hh-autoapply/serbia_digest.py
 TimeoutStartSec=30min
