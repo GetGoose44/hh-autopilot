@@ -117,6 +117,9 @@ def build_report(log: str) -> str:
     if errors:
         lines.append(f"⚠️ Ошибки ({len(errors)}):")
         lines += [f"<code>{escape(e[:200])}</code>" for e in errors[:5]]
+    # Прогоны идут каждый час: без откликов, ответов и ошибок отчёт не шлём
+    if not sent and not feedback_block and not errors and not dry:
+        return ""
     return "\n".join(lines)
 
 
@@ -149,6 +152,9 @@ def main() -> None:
     else:
         log = ANSI.sub("", Path(sys.argv[1]).read_text(errors="replace"))
         text = build_report(log)
+        if not text:
+            print("Нечего сообщать, отчёт не отправлен")
+            return
     for chunk in split_message(text):
         tg(token, "sendMessage", chat_id=chat_id, text=chunk,
            parse_mode="HTML", disable_web_page_preview="true")

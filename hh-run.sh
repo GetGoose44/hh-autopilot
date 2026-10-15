@@ -45,7 +45,8 @@ cleanup() {
 trap cleanup EXIT
 
 if (( SCHEDULED )); then
-  DELAY=$(( RANDOM % 3000 ))
+  # Прогон каждый час: небольшая случайная пауза, чтобы не стучаться в HH ровно в :00
+  DELAY=$(( RANDOM % 600 ))
   echo "Пауза $(( DELAY / 60 )) мин перед запуском"
   # Ждём по настенным часам: `sleep` в macOS не считает время сна,
   # и после пробуждения пауза растягивалась бы на часы
@@ -129,7 +130,7 @@ echo "Вакансии, опубликованные после $DATE_FROM"
 # Ищем по названию без фильтра роли: часть QA-вакансий заведена как «Программист, разработчик»;
 # не-IT «контроль качества» отсекает ИИ (SKIP)
 QA_SEARCH=(--search 'QA OR тестировщик OR тестирование OR SDET OR AQA OR tester OR "quality assurance"' --search-field name)
-QA_EXCLUDED='\bjunior\b(?!\s*\+)|стаж[её]р|\bintern\b|младш|^(?=.*(\bлид|лидер|техлид|тимлид|\blead\b|руководител|\bhead\b|архитектор|principal|\bstaff\b))(?=.*(автотест|автоматиз|\bAQA\b|SDET|automation))'
+QA_EXCLUDED='\bjunior\b(?!\s*\+)|стаж[её]р|\bintern\b|младш|^(?!.*middle)(?=.*(\bsenior\b|\bsr\b|ведущ|старш))|\blead\b|\bлид\b|тимлид|техлид|лидер|руководител|\bhead\b|начальник|директор|архитектор|principal|\bstaff\b'
 AI_SEARCH=(--search 'LLM OR "AI-инженер" OR "AI инженер" OR "AI engineer" OR "ИИ-инженер" OR "инженер ИИ" OR "prompt engineer" OR "промпт-инженер" OR "промпт инженер" OR "AI QA" OR "AI-агент" OR "AI агент" OR "AI agent" OR "ИИ-агент" OR "внедрению ИИ" OR "внедрению AI" OR "AI-аналитик" OR "AI аналитик" OR "AI analyst" OR "AI-специалист" OR "AI specialist"' --search-field name)
 AI_EXCLUDED="$QA_EXCLUDED"'|продаж|маркетинг|маркетолог|data scientist|\bML\b|devops|mlops|\bлид\b|лидер|техлид|тимлид|\blead\b|руководител|начальник|\bhead\b|директор|архитектор'
 
@@ -174,14 +175,23 @@ apply_with_retries() {
   return $rc
 }
 
+# A/B-тест: по нечётным дням года удалёнка идёт со второго резюме и его профилем,
+# по чётным — с основного; сравнение — stats.py --week, срез «A/B удалёнки»
+if (( $(date +%j) % 2 )); then
+  REMOTE_RESUME=$RESUME_OFFICE REMOTE_PROFILE=$DIR/profile_office.txt
+else
+  REMOTE_RESUME=$RESUME_MAIN REMOTE_PROFILE=$DIR/profile.txt
+fi
+echo "Удалёнка сегодня с резюме $REMOTE_RESUME"
+
 echo "--- Удалёнка, любой регион"
-apply_with_retries QA --resume-id $RESUME_MAIN --work-format REMOTE "$@"
+PROFILE=$REMOTE_PROFILE apply_with_retries QA --resume-id $REMOTE_RESUME --work-format REMOTE "$@"
 REMOTE_RC=$?
 echo "--- Страна проживания, любой формат"
 apply_with_retries QA --resume-id $RESUME_MAIN --area $HOME_AREA "$@"
 CITY_RC=$?
 echo "--- AI-направление: удалёнка, любой регион"
-apply_with_retries AI --resume-id $RESUME_MAIN --work-format REMOTE "$@"
+PROFILE=$REMOTE_PROFILE apply_with_retries AI --resume-id $REMOTE_RESUME --work-format REMOTE "$@"
 AI_REMOTE_RC=$?
 echo "--- AI-направление: страна проживания, любой формат"
 apply_with_retries AI --resume-id $RESUME_MAIN --area $HOME_AREA "$@"

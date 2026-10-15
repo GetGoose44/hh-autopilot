@@ -31,7 +31,7 @@ BASE = [
     "experience=between1And3", "experience=between3And6", "experience=moreThan6",
     "salary=150000", "currency=RUR",
 ]
-QA_EXCLUDED = r"\bjunior\b(?!\s*\+)|стаж[её]р|\bintern\b|младш|^(?=.*(\bлид|лидер|техлид|тимлид|\blead\b|руководител|\bhead\b|архитектор|principal|\bstaff\b))(?=.*(автотест|автоматиз|\bAQA\b|SDET|automation))"
+QA_EXCLUDED = r"\bjunior\b(?!\s*\+)|стаж[её]р|\bintern\b|младш|^(?!.*middle)(?=.*(\bsenior\b|\bsr\b|ведущ|старш))|\blead\b|\bлид\b|тимлид|техлид|лидер|руководител|\bhead\b|начальник|директор|архитектор|principal|\bstaff\b"
 DIRECTIONS = [
     (['text=QA OR тестировщик OR тестирование OR SDET OR AQA OR tester OR "quality assurance"', "search_field=name"],
      re.compile(QA_EXCLUDED, re.I)),
@@ -176,11 +176,14 @@ def telegram(date_from: str, pid: int) -> None:
     APPLY_STARTED.write_text(f"{date_from} {started.isoformat()}")
     last = render(snapshot(date_from, started), False)
     msg = tg(token, "sendMessage", chat_id=chat_id, parse_mode="HTML", text=last)["result"]["message_id"]
+    snapshot_done = -1
     while True:
         time.sleep(INTERVAL)
         alive = run_alive(pid)
         try:
-            text = render(snapshot(date_from, started), not alive)
+            s = snapshot(date_from, started)
+            snapshot_done = s["done"]
+            text = render(s, not alive)
             if text != last:  # одинаковый текст Telegram отвергает с ошибкой 400
                 tg(token, "editMessageText", chat_id=chat_id, message_id=msg,
                    parse_mode="HTML", text=text)
@@ -189,6 +192,9 @@ def telegram(date_from: str, pid: int) -> None:
             # Сбой сети или HH не должен ронять шкалу — попробуем через минуту
             print(f"progress: {str(ex)[:200]}", file=sys.stderr)
         if not alive:
+            # Прогоны идут каждый час: пустую шкалу (ни одного отклика) убираем из чата
+            if snapshot_done == 0:
+                tg(token, "deleteMessage", chat_id=chat_id, message_id=msg)
             return
 
 

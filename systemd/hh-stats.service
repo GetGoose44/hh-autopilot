@@ -1,0 +1,11 @@
+[Unit]
+Description=HH weekly funnel report to Telegram
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=hh
+WorkingDirectory=/home/hh/hh-autoapply
+ExecStart=/home/hh/hh-autoapply/.venv/bin/python /home/hh/hh-autoapply/stats.py --week
+TimeoutStartSec=30min
