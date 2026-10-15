@@ -1,0 +1,16 @@
+.venv/
+__pycache__/
+hh-applicant-tool/
+logs/
+.shim-cwd/
+.run.lock/
+.last_search
+.apply_started
+*.env
+!examples/*.env
+claude.env
+profile*.txt
+!examples/profile.example.txt
+excluded_employers.txt
+*_state.json
+!examples/excluded_employers.txt

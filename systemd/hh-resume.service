@@ -1,0 +1,9 @@
+[Unit]
+Description=Raise HH resume
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=hh
+ExecStart=/home/hh/hh-autoapply/.venv/bin/hh-applicant-tool update-resumes

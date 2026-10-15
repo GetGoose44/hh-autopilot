@@ -1,0 +1,11 @@
+[Unit]
+Description=HH employer chats: notify and remind
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=hh
+WorkingDirectory=/home/hh/hh-autoapply
+ExecStart=/home/hh/hh-autoapply/inbox.sh
+TimeoutStartSec=30min

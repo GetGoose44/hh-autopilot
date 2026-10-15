@@ -1,0 +1,11 @@
+[Unit]
+Description=HH autoapply run
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=hh
+WorkingDirectory=/home/hh/hh-autoapply
+ExecStart=/home/hh/hh-autoapply/hh-run.command --scheduled
+TimeoutStartSec=12h

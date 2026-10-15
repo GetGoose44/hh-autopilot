@@ -1,0 +1,9 @@
+[Unit]
+Description=Raise HH resume every 4 hours
+
+[Timer]
+OnBootSec=10min
+OnUnitActiveSec=4h05min
+
+[Install]
+WantedBy=timers.target
