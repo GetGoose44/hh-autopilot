@@ -23,7 +23,7 @@ TOOL = DIR / ".venv/bin/hh-applicant-tool"
 LOCK = DIR / ".run.lock"
 # Когда прогон дошёл до откликов: до этого он может часами ждать сеть или Claude
 APPLY_STARTED = DIR / ".apply_started"
-INTERVAL = 60
+INTERVAL = 180
 WIDTH = 20
 
 # Те же фильтры, что в apply_pass из hh-run.command

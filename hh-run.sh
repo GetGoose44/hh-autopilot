@@ -109,6 +109,13 @@ while [[ "$PROBE" != *'"choices"'* ]]; do
   PROBE=$(probe_claude)
 done
 
+# HH пометил аккаунт ботом (капча на отклик): 3 часа не трогаем его совсем
+PAUSE="$DIR/.captcha_pause"
+if [[ -f "$PAUSE" ]] && (( $(now) - $(<"$PAUSE") < 3 * 3600 )); then
+  echo "Пауза после капчи на отклик, прогон пропускаем"
+  exit 0
+fi
+
 echo "--- Доступ к вакансиям"
 # Капча на карточках вакансий: откликаться бесполезно, ждём, тревога не чаще раза в 12 часов
 CAPTCHA=$("$DIR/.venv/bin/python" "$DIR/captcha_check.py" 2>/dev/null)
@@ -236,6 +243,19 @@ if [[ -n "$RESUME_TH" ]]; then
   PROFILE=$DIR/profile_th.txt apply_with_retries TH --resume-id $RESUME_TH --area 300 "$@" --date-from "$TH_FROM"
   TH_RC=$?
   (( TH_RC == 0 )) && [[ "$*" != *--dry-run* ]] && touch "$DIR/.th_backfilled"
+fi
+
+# Капча на сам отклик: пауза 3 часа, тревога не чаще раза в 12 часов; время поиска не сдвигаем
+if grep -q "'isBot': True" "$LOG"; then
+  echo "HH требует капчу на отклик, ставим паузу 3 часа"
+  now > "$PAUSE"
+  STAMP="$DIR/.captcha_alert"
+  if [[ ! -f "$STAMP" ]] || (( $(now) - $(<"$STAMP") > 12 * 3600 )); then
+    "$DIR/.venv/bin/python" "$DIR/report.py" --alert \
+      "HH просит капчу на отклик (считает аккаунт ботом). Прогоны на паузе по 3 часа, пока не пройдёт. Ускорить: зайди на hh.ru в браузере и откликнись на любую вакансию вручную — если появится капча, пройди её."
+    now > "$STAMP"
+  fi
+  exit 1
 fi
 
 # Время запоминаем только после успешных проходов и не в пробном режиме,
