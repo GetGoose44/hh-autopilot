@@ -1,4 +1,4 @@
-"""Зарубежные вакансии вне HH: удалёнка по миру и Европе (LinkedIn), Сербия (Infostud, LinkedIn), Таиланд (LinkedIn).
+"""Зарубежные вакансии вне HH: удалёнка по миру (LinkedIn, Remote OK, Remotive, Himalayas, Working Nomads), Сербия (Infostud, LinkedIn), Таиланд (LinkedIn).
 
 Раз в будний день (таймер hh-abroad):
 - ищет новые вакансии, Claude по профилю решает, подходит ли, и пишет выжимку на русском;
@@ -49,6 +49,7 @@ COUNTRIES = {
         "linkedin": [("Worldwide", "2"), ("European Union", "2")],
         "linkedin_queries": ["QA engineer", "QA automation engineer", "SDET", "software tester", "AI QA"],
         "infostud": False,
+        "boards": True,
         "roles": "QA и тестирование ПО, автоматизация тестирования (AQA, SDET), AI/LLM-качество — уровень middle и выше (senior и lead тоже подходят); стажировки и junior — fit false. Только удалёнка, доступная кандидату: fit false, если нужно гражданство, "
                  "резидентство или разрешение на работу в конкретной стране без релокации",
     },
@@ -59,6 +60,7 @@ COUNTRIES = {
         "linkedin": [("Serbia", "")],
         "linkedin_queries": ["QA engineer", "QA automation engineer", "SDET", "software tester", "AI QA"],
         "infostud": True,
+        "boards": False,
         "roles": "QA и тестирование ПО, автоматизация тестирования (AQA, SDET), AI/LLM-качество — уровень middle и выше (senior и lead тоже подходят); стажировки и junior — fit false",
     },
     "thailand": {
@@ -69,6 +71,7 @@ COUNTRIES = {
         "linkedin_queries": ["QA engineer", "software tester", "Russian speaking", "Russian speaker customer",
                              "AI product", "customer success"],
         "infostud": False,
+        "boards": False,
         "roles": "QA и тестирование, AI и продуктовые роли, а также не-IT роли из раздела профиля «РОЛИ НЕ ИЗ IT» "
                  "(клиенты, поддержка, операционные, роли для русскоговорящих, финтех, iGaming, стажёр в продажах)",
     },
@@ -81,6 +84,12 @@ INFOSTUD_LINK = re.compile(r"/posao/([a-z0-9-]+)/([a-z0-9-]+)/(\d+)")
 EMAIL = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
 # Адреса площадок и служебные — не работодатели
 NOT_EMPLOYER = re.compile(r"infostud|linkedin|hrlab|noreply|no-reply|example|sentry|wixpress|\.png$|\.jpg$", re.I)
+
+# Сайты удалёнки: роль по названию и где разрешено работать.
+# Пустое ограничение — «из любой страны»; явный список стран без Сербии/Европы — не нам
+BOARD_TITLE = re.compile(r"\bqa\b|quality assurance|quality engineer|\btest|sdet", re.I)
+BOARD_PLACE = re.compile(r"^\s*$|worldwide|anywhere|global|europe|\beu\b|emea|serbia|\bcet\b|\bcest\b|remote", re.I)
+HIMALAYAS_QUERIES = ["qa engineer", "qa automation", "sdet", "test automation"]
 
 JUDGE_RULES = """\
 ЗАДАЧА: в сообщении — вакансия ({country}). Подходящие роли: {roles}.
@@ -185,8 +194,59 @@ def linkedin_jobs(searches: list[tuple[str, str]], queries: list[str]) -> list[d
     return [{"key": k, **v} for k, v in jobs.items()]
 
 
+def board_job(key: str, url: str, title: str, company: str, place: str, body: str) -> dict | None:
+    if not BOARD_TITLE.search(title) or not BOARD_PLACE.search(place or ""):
+        return None
+    body = text_of(body or "")
+    if place:
+        body = f"Где можно работать: {place}\n\n{body}"
+    return {"key": key, "url": url, "apply": url, "title": html.unescape(title.strip()),
+            "company": html.unescape((company or "").strip()), "body": body}
+
+
+def get_json(url: str):
+    return json.loads(fetch(url))
+
+
+def board_jobs() -> list[dict]:
+    """Сайты удалёнки: открытые JSON-фиды, вакансия сразу с текстом."""
+    found = []
+
+    def collect(source: str, load, convert) -> None:
+        try:
+            items = load()
+        except (OSError, ValueError) as ex:
+            print(f"{source}: {ex}", file=sys.stderr)
+            return
+        for item in items:
+            try:
+                job = convert(item)
+            except (KeyError, TypeError):
+                continue
+            if job:
+                found.append(job)
+
+    collect("remoteok", lambda: get_json("https://remoteok.com/api")[1:], lambda j: board_job(
+        f"remoteok:{j['id']}", j["url"], j["position"], j.get("company"), j.get("location") or "", j.get("description")))
+    collect("remotive", lambda: get_json("https://remotive.com/api/remote-jobs?search=qa")["jobs"], lambda j: board_job(
+        f"remotive:{j['id']}", j["url"], j["title"], j.get("company_name"), j.get("candidate_required_location"),
+        j.get("description")))
+    for query in HIMALAYAS_QUERIES:
+        collect("himalayas", lambda q=query: get_json(
+            "https://himalayas.app/jobs/api/search?" + urllib.parse.urlencode({"q": q}))["jobs"], lambda j: board_job(
+            f"himalayas:{j['guid']}", j["applicationLink"], j["title"], j.get("companyName"),
+            ", ".join(j.get("locationRestrictions") or []), j.get("description")))
+        time.sleep(2)
+    collect("workingnomads", lambda: get_json("https://www.workingnomads.com/api/exposed_jobs/"), lambda j: board_job(
+        f"workingnomads:{j['url']}", j["url"], j["title"], j.get("company_name"), j.get("location") or "",
+        j.get("description")))
+    return list({j["key"]: j for j in found}.values())
+
+
 def details(job: dict) -> tuple[str, list[str]]:
     """Текст вакансии (обрезанный) и email работодателя из объявления."""
+    if "body" in job:
+        return job["body"][:7000], employer_emails(job["body"])
     if job["key"].startswith("linkedin:"):
         page = LinkedIn.get(f"https://www.linkedin.com/jobs-guest/jobs/api/jobPosting/{job['id']}")
         m = re.search(r"show-more-less-html__markup[^>]*>(.*?)</div>", page, re.S)
@@ -245,6 +305,8 @@ def main() -> None:
         jobs = linkedin_jobs(country["linkedin"], country["linkedin_queries"])
         if country["infostud"]:
             jobs = infostud_jobs() + jobs
+        if country["boards"]:
+            jobs = board_jobs() + jobs
         sent, manual = [], []
         for job in jobs:
             # Одна вакансия LinkedIn может найтись и в «мире», и в стране — разбираем один раз
