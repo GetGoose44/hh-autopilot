@@ -1,4 +1,4 @@
-"""Зарубежные вакансии вне HH: Сербия (Infostud, LinkedIn) и Таиланд (LinkedIn).
+"""Зарубежные вакансии вне HH: удалёнка по миру и Европе (LinkedIn), Сербия (Infostud, LinkedIn), Таиланд (LinkedIn).
 
 Раз в будний день (таймер hh-abroad):
 - ищет новые вакансии, Claude по профилю решает, подходит ли, и пишет выжимку на русском;
@@ -31,25 +31,41 @@ SMTP_FILE = DIR / "smtp.env"
 UA = {"User-Agent": "Mozilla/5.0"}
 # Не больше стольких писем работодателям за запуск — остальное в Telegram
 MAX_EMAILS = 10
-# Сколько новых вакансий разбирать за запуск (каждая — вызов Claude); остальные — завтра
-MAX_JUDGE = int(os.environ.get("ABROAD_LIMIT", "40"))
+# Сколько новых вакансий разбирать за запуск в каждом направлении (каждая — вызов Claude); остальные — завтра
+MAX_JUDGE = int(os.environ.get("ABROAD_LIMIT", "25"))
+# LinkedIn режет частые запросы (429, обрыв соединения): пауза между запросами и
+# сколько сбоев подряд терпим, прежде чем бросить LinkedIn до следующего запуска
+LINKEDIN_PAUSE = 6
+LINKEDIN_MAX_FAILS = 3
+# Опыт в поиске LinkedIn: 3 — Associate, 4 — Mid-Senior (без стажировок и entry level)
+LINKEDIN_LEVELS = "3,4"
 
 COUNTRIES = {
+    # Удалёнка без привязки к стране: резюме то же, что для Сербии
+    "world": {
+        "flag": "🌍", "name": "Удалёнка по миру",
+        "profile": DIR / "profile.txt",
+        "cv": DIR / "cv" / "Nikita_Semenov_QA_Engineer_CV.pdf",
+        "linkedin": [("Worldwide", "2"), ("European Union", "2")],
+        "linkedin_queries": ["QA engineer", "QA automation engineer", "SDET", "software tester", "AI QA"],
+        "infostud": False,
+        "roles": "QA и тестирование ПО, автоматизация тестирования (AQA, SDET), AI/LLM-качество — уровень middle и выше (senior и lead тоже подходят); стажировки и junior — fit false. Только удалёнка, доступная кандидату: fit false, если нужно гражданство, "
+                 "резидентство или разрешение на работу в конкретной стране без релокации",
+    },
     "serbia": {
         "flag": "🇷🇸", "name": "Сербия",
         "profile": DIR / "profile.txt",
         "cv": DIR / "cv" / "Nikita_Semenov_QA_Engineer_CV.pdf",
-        "linkedin_location": "Serbia",
-        "linkedin_queries": ["QA engineer", "software tester", "test automation", "automotive internship", "AI quality"],
+        "linkedin": [("Serbia", "")],
+        "linkedin_queries": ["QA engineer", "QA automation engineer", "SDET", "software tester", "AI QA"],
         "infostud": True,
-        "roles": "QA и тестирование ПО, AI/LLM-качество, стажировки и junior-позиции в IT и автомобильной "
-                 "отрасли (софт, данные, качество), кроме такси, перевозок и доставки",
+        "roles": "QA и тестирование ПО, автоматизация тестирования (AQA, SDET), AI/LLM-качество — уровень middle и выше (senior и lead тоже подходят); стажировки и junior — fit false",
     },
     "thailand": {
         "flag": "🇹🇭", "name": "Таиланд",
         "profile": DIR / "profile_th.txt",
         "cv": DIR / "cv" / "Nikita_Semenov_CV_Thailand.pdf",
-        "linkedin_location": "Thailand",
+        "linkedin": [("Thailand", "")],
         "linkedin_queries": ["QA engineer", "software tester", "Russian speaking", "Russian speaker customer",
                              "AI product", "customer success"],
         "infostud": False,
@@ -58,13 +74,8 @@ COUNTRIES = {
     },
 }
 
-# Infostud: компании (запрос → часть слага работодателя) и роли; фильтр по ссылке объявления
-INFOSTUD_COMPANIES = {
-    "Bosch": "bosch", "Continental": "continental", "RT-RK": "rt-rk", "HTEC": "htec", "ZF": "zf-",
-    "FCA Srbija": "fca", "Stellantis": "stellantis", "Brose": "brose", "NIRA": "nira", "Elektrobit": "elektrobit",
-}
-INFOSTUD_ROLE_QUERIES = ["QA engineer", "tester", "test automation", "software tester"]
-INFOSTUD_ROLE = re.compile(r"intern|praks|prakt|(^|-)qa(-|$)|test|software|softver|(^|-)ai(-|$)|data|cloud|validation|embedded")
+# Infostud: запросы и фильтр по ссылке объявления
+INFOSTUD_ROLE_QUERIES = ["QA engineer", "tester", "test automation", "software tester", "SDET"]
 INFOSTUD_QA = re.compile(r"(^|-)qa(-|$)|test(?!al)|quality-assurance")
 INFOSTUD_LINK = re.compile(r"/posao/([a-z0-9-]+)/([a-z0-9-]+)/(\d+)")
 EMAIL = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
@@ -77,8 +88,7 @@ JUDGE_RULES = """\
 {{"fit": true/false, "summary_ru": "...", "subject": "...", "letter": "..."}}
 
 - fit — false, если роль не из списка подходящих, нужен язык, которого у кандидата нет (сербский, тайский),
-  или главное требование — опыт, которого в профиле нет. Стажировки для студентов — fit true, но в summary_ru
-  отметь «нужен статус студента».
+  или главное требование — опыт, которого в профиле нет.
 - summary_ru — 2–3 коротких предложения по-русски: что за роль и компания, ключевые требования,
   чего из требований у кандидата нет. Без воды.
 - subject — тема письма работодателю на английском: «Application: <должность> — Nikita Semenov».
@@ -112,17 +122,14 @@ def employer_emails(page: str) -> list[str]:
 
 def infostud_jobs() -> list[dict]:
     jobs: dict[str, dict] = {}
-    for query in [*INFOSTUD_COMPANIES, *INFOSTUD_ROLE_QUERIES]:
+    for query in INFOSTUD_ROLE_QUERIES:
         try:
             page = fetch(f"https://poslovi.infostud.com/oglasi-za-posao?q={urllib.parse.quote(query)}")
         except OSError as ex:
             print(f"infostud {query}: {ex}", file=sys.stderr)
             continue
         for slug, company, job_id in dict.fromkeys(INFOSTUD_LINK.findall(page)):
-            if query in INFOSTUD_COMPANIES:
-                if INFOSTUD_COMPANIES[query] not in company or not INFOSTUD_ROLE.search(slug):
-                    continue
-            elif not INFOSTUD_QA.search(slug):
+            if not INFOSTUD_QA.search(slug):
                 continue
             url = f"https://poslovi.infostud.com/posao/{slug}/{company}/{job_id}"
             jobs[f"infostud:{job_id}"] = {
@@ -133,15 +140,36 @@ def infostud_jobs() -> list[dict]:
     return [{"key": k, **v} for k, v in jobs.items()]
 
 
-def linkedin_jobs(location: str, queries: list[str]) -> list[dict]:
-    jobs: dict[str, dict] = {}
-    for query in queries:
-        url = ("https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search?"
-               + urllib.parse.urlencode({"keywords": query, "location": location, "f_TPR": "r604800"}))
+class LinkedIn:
+    """Запросы к LinkedIn с паузой; после нескольких сбоев подряд — до следующего запуска не трогаем."""
+    fails = 0
+
+    @classmethod
+    def get(cls, url: str) -> str:
+        if cls.fails >= LINKEDIN_MAX_FAILS:
+            raise OSError("LinkedIn ограничил запросы, продолжим в следующий запуск")
+        time.sleep(LINKEDIN_PAUSE)
         try:
             page = fetch(url)
+        except OSError:
+            cls.fails += 1
+            time.sleep(60)
+            raise
+        cls.fails = 0
+        return page
+
+
+def linkedin_jobs(searches: list[tuple[str, str]], queries: list[str]) -> list[dict]:
+    jobs: dict[str, dict] = {}
+    for (location, work_type), query in ((s, q) for s in searches for q in queries):
+        params = {"keywords": query, "location": location, "f_TPR": "r604800", "f_E": LINKEDIN_LEVELS}
+        if work_type:
+            params["f_WT"] = work_type
+        url = "https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search?" + urllib.parse.urlencode(params)
+        try:
+            page = LinkedIn.get(url)
         except OSError as ex:
-            print(f"linkedin {query}: {ex}", file=sys.stderr)
+            print(f"linkedin {location} {query}: {ex}", file=sys.stderr)
             continue
         for card in page.split("<li")[1:]:
             m = re.search(r'href="(https://[a-z]+\.linkedin\.com/jobs/view/[^"?]*?-(\d+))[?"]', card)
@@ -154,14 +182,13 @@ def linkedin_jobs(location: str, queries: list[str]) -> list[dict]:
                 "title": html.unescape(title.group(1).strip()) if title else "Вакансия",
                 "company": html.unescape(company.group(1).strip()) if company else "",
             }
-        time.sleep(3)
     return [{"key": k, **v} for k, v in jobs.items()]
 
 
 def details(job: dict) -> tuple[str, list[str]]:
     """Текст вакансии (обрезанный) и email работодателя из объявления."""
     if job["key"].startswith("linkedin:"):
-        page = fetch(f"https://www.linkedin.com/jobs-guest/jobs/api/jobPosting/{job['id']}")
+        page = LinkedIn.get(f"https://www.linkedin.com/jobs-guest/jobs/api/jobPosting/{job['id']}")
         m = re.search(r"show-more-less-html__markup[^>]*>(.*?)</div>", page, re.S)
         body = text_of(m.group(1)) if m else text_of(page)
     else:
@@ -211,14 +238,16 @@ def main() -> None:
         state = {"seen": [], "emailed": []}
     seen, emailed = set(state["seen"]), set(state["emailed"])
     smtp = smtp_config()
-    sent_count = judged = 0
+    sent_count = 0
     blocks = []
     for code, country in COUNTRIES.items():
-        jobs = linkedin_jobs(country["linkedin_location"], country["linkedin_queries"])
+        judged = 0
+        jobs = linkedin_jobs(country["linkedin"], country["linkedin_queries"])
         if country["infostud"]:
             jobs = infostud_jobs() + jobs
         sent, manual = [], []
         for job in jobs:
+            # Одна вакансия LinkedIn может найтись и в «мире», и в стране — разбираем один раз
             if job["key"] in seen or judged >= MAX_JUDGE:
                 continue
             judged += 1
