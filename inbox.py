@@ -3,7 +3,7 @@
 Запускается таймером каждые 15 минут (inbox.sh):
 - новые сообщения работодателей — сразу в Telegram (разбор feedback.collect());
 - чаты, где последнее слово за работодателем и от тебя ждут действия
-  (вопрос, ссылка, созвон, тест), — напоминание раз в сутки, пока не ответишь.
+  (вопрос, ссылка, созвон, тест), — напоминание раз в сутки, но не дольше 3 дней.
 
 Пока идёт прогон (.run.lock), новые сообщения не трогаем: их соберёт отчёт прогона.
 Запуск вручную: .venv/bin/python inbox.py [--dry]
@@ -25,6 +25,8 @@ LOCK = DIR / ".run.lock"
 SCAN_EVERY = timedelta(hours=1)
 REMIND_EVERY = timedelta(hours=24)
 MAX_AGE = timedelta(days=14)
+# Не ответил работодателю дольше этого — значит, неинтересно, больше не напоминаем
+REMIND_GIVE_UP = timedelta(days=3)
 # Веб-сессия HH (нужна для ответов в чатах и откликов с анкетой) — проверка и тревога
 SESSION_CHECK_EVERY = timedelta(hours=1)
 SESSION_ALERT_EVERY = timedelta(hours=12)
@@ -164,6 +166,8 @@ def reminders(state: dict) -> str:
     for c in waiting_chats(cache):
         prev = reminded.get(c["chat_id"])
         if prev and now() - datetime.fromisoformat(prev) < REMIND_EVERY:
+            continue
+        if now() - c["since"] > REMIND_GIVE_UP:
             continue
         reminded[c["chat_id"]] = now().isoformat()
         excerpt = feedback.escape(re.sub(r"\s+", " ", c["text"])[:250])
