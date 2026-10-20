@@ -17,6 +17,9 @@ It is built on top of [hh-applicant-tool](https://github.com/s3rgeym/hh-applican
 
 A real account: a QA engineer with 5 years of experience. The numbers are computed by `stats.py` from the HH API.
 
+<!-- stats:start -->
+<!-- stats:end -->
+
 | | Before (by hand and simple scripts) | Autopilot, first 17 days |
 |---|---|---|
 | Applications | 5677 | 452 |
