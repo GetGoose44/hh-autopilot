@@ -18,6 +18,18 @@ It is built on top of [hh-applicant-tool](https://github.com/s3rgeym/hh-applican
 A real account: a QA engineer with 5 years of experience. The numbers are computed by `stats.py` from the HH API.
 
 <!-- stats:start -->
+**Now** — updated automatically every Monday, last update 2026-10-20:
+
+| | Before (by hand) | Autopilot, all time | Last 7 days |
+|---|---|---|---|
+| Applications | 5677 | 530 | 162 |
+| Applications per active day | ≈19 | ≈33 | ≈27 |
+| Invitations, % of all applications | 7.2% | 5.7% | 6.8% |
+| Invitations, % of employers who replied | 16.1% | 14.3% | 25.6% |
+
+The last-7-days rates are understated: recent applications are still awaiting replies.
+
+Below are the first 17 days, the ones the article is based on:
 <!-- stats:end -->
 
 | | Before (by hand and simple scripts) | Autopilot, first 17 days |
